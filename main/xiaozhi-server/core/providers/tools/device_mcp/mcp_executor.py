@@ -1,4 +1,10 @@
-"""设备端MCP工具执行器"""
+"""设备端 MCP 工具执行器。
+
+固件可通过 MCP 注册工具（例如 bread-compact-wifi / bread-compact-ml307 上的
+``self.mlx90614.read_temperature``）。设备连接并完成 ``tools/list`` 同步后，
+`get_tools()` 会将这些工具并入 LLM 可见列表；名称中的 ``.`` 会经
+`sanitize_tool_name` 转为下划线（如 ``self_mlx90614_read_temperature``）。
+"""
 
 from typing import Dict, Any, TYPE_CHECKING
 

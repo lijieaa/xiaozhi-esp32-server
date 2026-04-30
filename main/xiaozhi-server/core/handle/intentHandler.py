@@ -16,6 +16,17 @@ from core.providers.tts.dto.dto import TTSMessageDTO, SentenceType
 
 TAG = __name__
 
+SELF_HARM_EMERGENCY_KEYWORDS = [
+    "想死",
+    "不想活",
+    "结束一切",
+    "告别",
+    "自残",
+    "安眠药",
+    "轻生",
+    "割腕",
+]
+
 
 async def handle_user_intent(conn: "ConnectionHandler", text):
     # 预处理输入文本，处理可能的JSON格式
@@ -27,6 +38,19 @@ async def handle_user_intent(conn: "ConnectionHandler", text):
                 conn.current_speaker = parsed_data.get("speaker")  # 保留说话人信息
     except (json.JSONDecodeError, TypeError):
         pass
+
+    # 最高优先级安全红线：命中自伤/自杀词直接中断常规流程
+    if check_self_harm_emergency(text):
+        conn.sentence_id = str(uuid.uuid4().hex)
+        speak_txt(
+            conn,
+            "【AI紧急提醒】同学，现在请先停下对话，听我说。"
+            "如果你现在觉得非常痛苦，请立刻联系现实中的成年人帮你。"
+            "如果你在宿舍或教室，请马上对最近的同学说“陪我去找老师”；"
+            "如果你独自一人，请拨打12355或学校心理中心紧急电话。"
+            "你值得被帮助，现在就去找班主任、心理老师或家长。",
+        )
+        return True
 
     # 检查是否有明确的退出命令
     _, filtered_text = remove_punctuation_and_length(text)
@@ -42,6 +66,26 @@ async def handle_user_intent(conn: "ConnectionHandler", text):
         return True
 
     if conn.intent_type == "function_call":
+        # function_call 模式下主流程不再走 intent_llm，但校园分诊必须确定性执行，
+        # 否则仅靠 LLM 选工具会漏调 campus_medical_triage，外伤流程无法保证。
+        from plugins_func.functions.campus_medical_triage import (
+            campus_medical_triage,
+            should_run_deterministic_triage,
+        )
+
+        if should_run_deterministic_triage(conn, text):
+            conn.sentence_id = str(uuid.uuid4().hex)
+            temp = getattr(conn, "last_temperature_c", None)
+            try:
+                ar = campus_medical_triage(conn, text, temperature_c=temp)
+            except Exception as e:
+                conn.logger.bind(tag=TAG).error(f"校园分诊处理失败: {e}")
+                return False
+            if ar is not None and ar.action == Action.RESPONSE and ar.response:
+                await send_stt_message(conn, text)
+                speak_txt(conn, ar.response)
+                conn.logger.bind(tag=TAG).info("已走确定性校园分诊，跳过主 LLM")
+                return True
         # 使用支持function calling的聊天方法,不再进行意图分析
         return False
     # 使用LLM进行意图分析
@@ -238,3 +282,10 @@ def speak_txt(conn: "ConnectionHandler", text):
         )
     )
     conn.dialogue.put(Message(role="assistant", content=text))
+
+
+def check_self_harm_emergency(text: str) -> bool:
+    if not text:
+        return False
+    _, clean_text = remove_punctuation_and_length(text)
+    return any(keyword in clean_text for keyword in SELF_HARM_EMERGENCY_KEYWORDS)

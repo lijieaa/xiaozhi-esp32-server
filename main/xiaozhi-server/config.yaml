@@ -4,6 +4,9 @@
 # 这样做，可以最简化配置，保护您的密钥安全。
 # 如果你使用了智控台，那么以下所有配置，都不会生效，请在智控台中修改配置
 
+# 是否从智控台 manager-api 拉取配置（true 时由 API 下发模型等；本地 test_page + OTA 请保持 false）
+read_config_from_api: false
+
 # #####################################################################################
 # #############################以下是服务器基本运行配置####################################
 server:
@@ -35,9 +38,10 @@ server:
     # 如果属于白名单内的设备，不校验token，直接放行
     allowed_devices:
       - "11:22:33:44:55:66"
- # MQTT网关配置，用于通过OTA下发到设备，根据mqtt_gateway的.env文件配置，格式为host:port
+  # MQTT 网关：填写非空字符串时，OTA 只下发 mqtt，不下发 websocket（浏览器 test_page 会连不上）
+  # 本地直连 WebSocket / 网页测试请保持 null；使用网关时再填 host:port
   mqtt_gateway: null
-  # MQTT签名密钥，用于生成MQTT连接密码，根据mqtt_gateway的.env文件配置
+  # 仅在使用 mqtt_gateway 时需要，与网关 .env 中签名密钥一致
   mqtt_signature_key: null
   # UDP网关配置
   udp_gateway: null
@@ -253,6 +257,7 @@ Intent:
     # 系统默认已经记载"handle_exit_intent(退出识别)"、"play_music(音乐播放)"插件，请勿重复加载
     # 下面是加载查天气、角色切换、加载查新闻的插件示例
     functions:
+      - campus_medical_triage
       - get_weather
       - get_news_from_newsnow
       - play_music
@@ -263,6 +268,7 @@ Intent:
     # 系统默认已经记载"handle_exit_intent(退出识别)"、"play_music(音乐播放)"插件，请勿重复加载
     # 下面是加载查天气、角色切换、加载查新闻的插件示例
     functions:
+      - campus_medical_triage
       - change_role
       - get_weather
       # - search_from_ragflow

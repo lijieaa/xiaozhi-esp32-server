@@ -941,10 +941,14 @@ class ConnectionHandler:
         if tool_call_reminder:
             self.dialogue.put(Message(role="user", content=tool_call_reminder, is_temporary=True))
 
+        tool_call_flag = False
+        tool_calls_list = []
+        content_arguments = ""
+        self.client_abort = False
+        emotion_flag = True
+
         try:
-            # 使用带记忆的对话
             memory_str = None
-            # 仅当query非空（代表用户询问）时查询记忆
             if self.memory is not None and query:
                 future = asyncio.run_coroutine_threadsafe(
                     self.memory.query_memory(query), self.loop
@@ -952,14 +956,38 @@ class ConnectionHandler:
                 memory_str = future.result()
 
             if self.intent_type == "function_call" and functions is not None:
-                # 使用支持functions的streaming接口
-                llm_responses = self.llm.response_with_functions(
-                    self.session_id,
-                    self.dialogue.get_llm_dialogue_with_memory(
-                        memory_str, self.config.get("voiceprint", {})
-                    ),
-                    functions=functions,
+                from plugins_func.functions.campus_medical_triage import (
+                    should_run_deterministic_triage,
                 )
+
+                if (
+                    depth == 0
+                    and query
+                    and self.func_handler.has_tool("campus_medical_triage")
+                    and should_run_deterministic_triage(self, query)
+                ):
+                    self.logger.bind(tag=TAG).info(
+                        "命中校园医疗分诊关键词，跳过主 LLM 工具路由，直接调用 campus_medical_triage"
+                    )
+                    tool_call_flag = True
+                    tool_calls_list = [
+                        {
+                            "id": uuid.uuid4().hex,
+                            "name": "campus_medical_triage",
+                            "arguments": json.dumps(
+                                {"user_text": query}, ensure_ascii=False
+                            ),
+                        }
+                    ]
+                    llm_responses = iter(())
+                else:
+                    llm_responses = self.llm.response_with_functions(
+                        self.session_id,
+                        self.dialogue.get_llm_dialogue_with_memory(
+                            memory_str, self.config.get("voiceprint", {})
+                        ),
+                        functions=functions,
+                    )
             else:
                 llm_responses = self.llm.response(
                     self.session_id,
@@ -972,12 +1000,6 @@ class ConnectionHandler:
             return None
 
         # 处理流式响应
-        tool_call_flag = False
-        # 支持多个并行工具调用 - 使用列表存储
-        tool_calls_list = []  # 格式: [{"id": "", "name": "", "arguments": ""}]
-        content_arguments = ""
-        self.client_abort = False
-        emotion_flag = True
         try:
             for response in llm_responses:
                 if self.client_abort:

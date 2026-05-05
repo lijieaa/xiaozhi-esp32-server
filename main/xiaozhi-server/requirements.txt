@@ -28,6 +28,9 @@ bs4==0.0.2
 modelscope==1.32.0
 sherpa_onnx==1.12.29
 mcp==1.22.0
+# 校园医疗分诊 LangGraph 编排（checkpoint / 可扩展多节点）
+langgraph>=0.2.50,<0.3
+langchain-core>=0.3.30,<0.4
 cnlunar==0.2.0
 PySocks==1.7.1
 dashscope==1.25.2
